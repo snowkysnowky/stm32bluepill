@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usbd_cdc_if.h"
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,17 +47,31 @@
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for myUSBpars */
+osThreadId_t myUSBparsHandle;
+const osThreadAttr_t myUSBpars_attributes = {
+  .name = "myUSBpars",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* USER CODE BEGIN PV */
+char *data = "Test USB\n";
 
+uint8_t buffer[64];
+uint8_t buffer1[64];
+
+const char s[4] = " ";
+char* tok;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 void StartDefaultTask(void *argument);
+void StartUSBpars(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -122,6 +138,9 @@ int main(void)
   /* creation of defaultTask */
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
+  /* creation of myUSBpars */
+  myUSBparsHandle = osThreadNew(StartUSBpars, NULL, &myUSBpars_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -154,6 +173,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -180,6 +200,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }
@@ -228,13 +254,60 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  CDC_Transmit_FS((uint8_t*)data, strlen(data));
+    osDelay(1000);
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartUSBpars */
+/**
+* @brief Function implementing the myUSBpars thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartUSBpars */
+void StartUSBpars(void *argument)
+{
+  /* USER CODE BEGIN StartUSBpars */
+  /* Infinite loop */
+  for(;;)
+  {
+	  tok = strtok(buffer, s);
+  	  if(!strcmp((char*)tok,"led"))
+  	  {
+  		  tok = strtok(0, s);
+  		  if(!strcmp((char*)tok,"on"))
+  		  	  {
+  		  		  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+  		  		  CDC_Transmit_FS((uint8_t*)tok, strlen(tok));
+  		  		  memset(buffer,'\0',64);
+  		  	  }
+
+  		  if(!strcmp((char*)tok,"off"))
+  		 	  {
+  		 	  	  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+  		 		  CDC_Transmit_FS((uint8_t*)tok, strlen(tok));
+  		 	  	  memset(buffer,'\0',64);
+  		 	  }
+  	  }
+
+  	  if(!strcmp((char*)tok,"duty"))
+  	  {
+  		  tok = strtok(0, s);
+  		  strcat(tok,"\n");
+  		  CDC_Transmit_FS((uint8_t*)tok, strlen(tok));
+  		  memset(buffer,'\0',64);
+  	  }
+    osDelay(1);
+  }
+  /* USER CODE END StartUSBpars */
 }
 
 /**
